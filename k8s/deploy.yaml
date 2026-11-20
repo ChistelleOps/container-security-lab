@@ -4,7 +4,6 @@ metadata:
   name: myapp-config
 data:
   APP_MESSAGE: "hello from Kubernetes"
-
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -20,15 +19,25 @@ spec:
       labels:
         app: myapp
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: myapp
-          image: myapp:2.0
+          image: myapp:2.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:
             - configMapRef:
                 name: myapp-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: 50m
@@ -45,7 +54,6 @@ spec:
               path: /health
               port: 8000
             periodSeconds: 10
-
 ---
 apiVersion: v1
 kind: Service
@@ -59,4 +67,3 @@ spec:
     - port: 80
       targetPort: 8000
       nodePort: 30080
-
