@@ -1,0 +1,5 @@
+.git
+*.md
+sbom.json
+k8s/
+Dockerfile*

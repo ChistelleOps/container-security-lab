@@ -1,0 +1,4 @@
+sbom.json
+*.log
+.kube/
+.env
