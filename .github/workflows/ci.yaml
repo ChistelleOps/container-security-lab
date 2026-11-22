@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO: container-security-lab
+  IMAGE: myapp:${{ github.sha }}
+  TRIVY: aquasec/trivy:latest
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --pull --build-arg VERSION=${GITHUB_SHA::7} -t "$IMAGE" .
+
+      - name: Smoke test
+        run: |
+          docker run -d --name app -p 8000:8000 "$IMAGE"
+          for i in 1 2 3 4 5; do curl -fs localhost:8000/health && break; sleep 1; done
+          curl -fs localhost:8000/health
+          docker exec app whoami | grep -v root
+          docker rm -f app
+
+      - name: Scan image (gate)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$IMAGE"
+
+      - name: Scan Kubernetes manifests (gate)
+        run: |
+          docker run --rm -v "$PWD":/src "$TRIVY" \
+            config --exit-code 1 --severity HIGH,CRITICAL /src/k8s
+
+      - name: Create SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":/out "$TRIVY" \
+            image --format cyclonedx -o /out/sbom.json "$IMAGE"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+      - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image to ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          REMOTE="${{ steps.ecr.outputs.registry }}/$ECR_REPO:$GITHUB_SHA"
+          docker tag "$IMAGE" "$REMOTE"
+          docker push "$REMOTE"
+          echo "Pushed: $REMOTE" >> "$GITHUB_STEP_SUMMARY"
