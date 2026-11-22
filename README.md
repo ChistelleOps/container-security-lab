@@ -41,6 +41,16 @@ A hands-on lab I built to practice building, running, securing and troubleshooti
 | Registry | Tags vs digests | A moved tag served different code; a digest always returned the original |
 | Registry | Promotion | Same digest promoted dev to prod, no rebuild |
 
-## Next
 
-CI pipeline with GitHub Actions: build, Trivy scan gate, push to Amazon ECR using OIDC.
+## CI/CD pipeline
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
+
+1. Build the image (tag = commit SHA)
+2. Smoke test: `/health` responds and the container is not root
+3. Trivy image scan gate: fails on fixable HIGH/CRITICAL
+4. Trivy config scan gate on `k8s/`
+5. SBOM (CycloneDX) uploaded as an artifact
+6. On `main` only: push to Amazon ECR with OIDC (no stored AWS keys), immutable tags, scan on push
+
+The IAM trust policy is limited to this repository and the `main` branch, using GitHub's immutable subject claim (owner and repository IDs).
