@@ -5,7 +5,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 FROM python:3.12-slim
 RUN apt-get update \
- && apt-get install -y --only-upgrade zlib1g \
+ && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 RUN useradd -r -u 10001 appuser
 ARG VERSION=2.0
